@@ -74,7 +74,7 @@ static void drawRow(int row, const Alert& a) {
 }
 
 void enterScreenHome() {
-  uiDrawFooterButtons("CAL", "ACK", "BASE+");
+  uiDrawFooterButtons("CAL", "ACK", "RELEARN");
   lastRowsDrawn = 0;
   scrollOff = 0;
   selectedRow = -1;
@@ -130,17 +130,18 @@ bool touchScreenHome(int sx, int sy) {
     uiRedraw();
     return true;
   }
-  if (btn == 1 || btn == 2) {
+  if (btn == 2) {
+    baselineRelearn();
+    uiRedraw();
+    return true;
+  }
+  if (btn == 1) {
     Alert all[ALERT_LOG_MAX];
     int total = alertSnapshot(all, ALERT_LOG_MAX);
     int shown = min(HOME_ROWS, total - scrollOff);
     if (selectedRow >= 0 && selectedRow < shown) {
       const Alert& a = all[scrollOff + selectedRow];
-      if (btn == 1) {
-        alertAckOne(a);
-      } else if (btn == 2) {
-        if (baselineAddFromAlert(a)) alertAckOne(a);
-      }
+      alertAckOne(a);
       uiRedraw();
       return true;
     }
