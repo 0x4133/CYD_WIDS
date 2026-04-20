@@ -40,7 +40,7 @@
 
 // ---- Live view caps ---------------------------------------------------------
 #define MAX_WIFI            32
-#define MAX_BLE             48
+#define MAX_BLE             40
 
 // ---- Queue sizes ------------------------------------------------------------
 #define SD_QUEUE_LEN        24
