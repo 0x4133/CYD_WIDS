@@ -133,6 +133,13 @@ void loop() {
       (unsigned long)sdWriterDropped());
   }
 
+  // Auto-ack alerts that have dwelled unresolved for long enough.
+  static uint32_t tAutoAck = 0;
+  if (millis() - tAutoAck > 1000) {
+    tAutoAck = millis();
+    alertsAutoAckTick();
+  }
+
   // ESP-NOW presence beacon — every ~5s, lets peers discover us silently.
   // Skip under heap pressure: each hello round-trips through the ESP-NOW tx
   // path (mbedtls ctx, driver buffers) and we'd rather drop the discovery
