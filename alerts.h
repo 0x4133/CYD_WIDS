@@ -27,6 +27,9 @@ void alertsBegin();
 void alertRaise(AlertType t, const uint8_t mac[6], uint16_t extra, const char* label);
 int  alertSnapshot(Alert* out, int maxOut);  // newest first
 void alertsClear();               // wipe the in-memory ring (UI button)
+bool alertAck(AlertType t, const uint8_t mac[6]); // suppress this signature
+bool alertAckOne(const Alert& a);                 // convenience helper
+bool alertIsAcked(AlertType t, const uint8_t mac[6]);
 uint32_t alertLastMs();
 uint32_t alertTotalCount();
 const char* alertTypeName(AlertType t);

@@ -224,3 +224,41 @@ void baselineRelearn() {
   if (SD.exists("/baseline_wifi.csv")) SD.remove("/baseline_wifi.csv");
   if (SD.exists("/baseline_ble.csv"))  SD.remove("/baseline_ble.csv");
 }
+
+bool baselineAddFromAlert(const Alert& a) {
+  bool added = false;
+  if (a.type == ALERT_NEW_WIFI && wifiBaseN < MAX_BASELINE_WIFI) {
+    char bssid[18];
+    snprintf(bssid, sizeof(bssid), "%02X:%02X:%02X:%02X:%02X:%02X",
+      a.mac[0], a.mac[1], a.mac[2], a.mac[3], a.mac[4], a.mac[5]);
+    if (!hasWifi(bssid)) {
+      WifiKey k{};
+      strlcpy(k.bssid, bssid, sizeof(k.bssid));
+      strlcpy(k.ssid, a.label, sizeof(k.ssid));
+      k.channel = (uint8_t)(a.extra & 0xFF);
+      k.auth = 0;
+      wifiBase[wifiBaseN++] = k;
+      added = true;
+    }
+  } else if (a.type == ALERT_NEW_BLE && bleBaseN < MAX_BASELINE_BLE) {
+    char mac[18];
+    snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
+      a.mac[0], a.mac[1], a.mac[2], a.mac[3], a.mac[4], a.mac[5]);
+    if (!hasBle(mac)) {
+      BleKey k{};
+      strlcpy(k.mac, mac, sizeof(k.mac));
+      strlcpy(k.name, a.label, sizeof(k.name));
+      bleBase[bleBaseN++] = k;
+      added = true;
+    }
+  }
+  if (!added) return false;
+
+  cacheHasOrAdd(newWifiCache, newWifiCacheN, a.mac);
+  cacheHasOrAdd(newBleCache, newBleCacheN, a.mac);
+  if (persist()) {
+    String row = String(millis()) + "|BASELINE_ADD|" + alertTypeName(a.type);
+    sdWriterEnqueue("/events.log", row);
+  }
+  return true;
+}

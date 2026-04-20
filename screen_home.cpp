@@ -13,6 +13,7 @@
 
 static int lastRowsDrawn = 0;
 static int scrollOff    = 0;
+static int selectedRow  = -1;  // visible row index [0..HOME_ROWS)
 // Row/header text cache — suppresses repaint when nothing actually
 // changed between 1.5s ticks (eliminates visible flicker).
 static char lastHeader[64] = {0};
@@ -45,6 +46,7 @@ static void drawHeader(int nAlerts) {
 static void drawRow(int row, const Alert& a) {
   int y = LIST_TOP + HDR_H + row * HOME_ROW_H;
   uint32_t ago = (millis() - a.tMs) / 1000;
+  uint16_t bg = (row == selectedRow) ? TFT_NAVY : TFT_BLACK;
   char line[64];
   snprintf(line, sizeof(line),
     "%-9s %02X%02X:%02X %3lus %s",
@@ -56,20 +58,21 @@ static void drawRow(int row, const Alert& a) {
   while (l > 4 && tft.textWidth(line, 1) > SCR_W - 6) line[--l] = 0;
   // Key includes color so a type change (same text) still repaints.
   char key[64];
-  snprintf(key, sizeof(key), "%d|%s", (int)a.type, line);
+  snprintf(key, sizeof(key), "%d|%u|%s", (int)a.type, (unsigned)bg, line);
   if (row < HOME_ROWS && strcmp(key, lastRowText[row]) == 0) return;
-  tft.fillRect(0, y, SCR_W, HOME_ROW_H, TFT_BLACK);
+  tft.fillRect(0, y, SCR_W, HOME_ROW_H, bg);
   uint16_t col = colorFor(a.type);
-  tft.setTextColor(col, TFT_BLACK);
+  tft.setTextColor(col, bg);
   tft.setTextDatum(ML_DATUM);
   tft.drawString(line, 4, y + HOME_ROW_H/2, 1);
   if (row < HOME_ROWS) strlcpy(lastRowText[row], key, sizeof(lastRowText[row]));
 }
 
 void enterScreenHome() {
-  uiDrawFooterButtons("CAL", "CLEAR", "RELEARN");
+  uiDrawFooterButtons("CAL", "ACK", "BASE+");
   lastRowsDrawn = 0;
   scrollOff = 0;
+  selectedRow = -1;
   lastHeader[0] = 0;
   memset(lastRowText, 0, sizeof(lastRowText));
 }
@@ -79,6 +82,8 @@ void drawScreenHome() {
   int total = alertSnapshot(all, ALERT_LOG_MAX);
   if (scrollOff > max(0, total - HOME_ROWS)) scrollOff = max(0, total - HOME_ROWS);
   int shown = min(HOME_ROWS, total - scrollOff);
+  if (shown <= 0) selectedRow = -1;
+  else if (selectedRow >= shown) selectedRow = shown - 1;
   drawHeader(total);
   for (int i = 0; i < shown; i++) drawRow(i, all[scrollOff + i]);
   // clear rows freed up since last draw
@@ -120,8 +125,21 @@ bool touchScreenHome(int sx, int sy) {
     uiRedraw();
     return true;
   }
-  if (btn == 1) { alertsClear(); scrollOff = 0; uiRedraw(); return true; }
-  if (btn == 2) { baselineRelearn(); uiRedraw(); return true; }
+  if (btn == 1 || btn == 2) {
+    Alert all[ALERT_LOG_MAX];
+    int total = alertSnapshot(all, ALERT_LOG_MAX);
+    int shown = min(HOME_ROWS, total - scrollOff);
+    if (selectedRow >= 0 && selectedRow < shown) {
+      const Alert& a = all[scrollOff + selectedRow];
+      if (btn == 1) {
+        alertAckOne(a);
+      } else if (btn == 2) {
+        if (baselineAddFromAlert(a)) alertAckOne(a);
+      }
+      uiRedraw();
+      return true;
+    }
+  }
 
   // Tap inside the list / scroll-bar area to page through alerts:
   // upper half scrolls toward newer, lower half toward older.
@@ -132,8 +150,20 @@ bool touchScreenHome(int sx, int sy) {
   if (total > HOME_ROWS && sy >= trackY && sy < trackY + trackH) {
     if (sy < trackY + trackH/2) scrollOff = max(0, scrollOff - HOME_ROWS);
     else                        scrollOff = min(total - HOME_ROWS, scrollOff + HOME_ROWS);
+    selectedRow = -1;
     uiRedraw();
     return true;
+  }
+  const int rowTop = LIST_TOP + HDR_H;
+  const int rowBottom = rowTop + HOME_ROWS * HOME_ROW_H;
+  if (sy >= rowTop && sy < rowBottom) {
+    int rel = (sy - rowTop) / HOME_ROW_H;
+    int shown = min(HOME_ROWS, total - scrollOff);
+    if (rel >= 0 && rel < shown) {
+      selectedRow = rel;
+      uiRedraw();
+      return true;
+    }
   }
   return false;
 }
