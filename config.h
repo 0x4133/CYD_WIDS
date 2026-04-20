@@ -34,8 +34,8 @@
 
 // ---- Baseline ---------------------------------------------------------------
 #define LEARN_WINDOW_MS  (10 * 60 * 1000)   // 10 min auto-learn
-#define MAX_BASELINE_WIFI  128
-#define MAX_BASELINE_BLE   128
+#define MAX_BASELINE_WIFI   96
+#define MAX_BASELINE_BLE    96
 #define ALERT_AUTO_ACK_DWELL_MS (2 * 60 * 1000) // auto-ack after 2 min
 
 // ---- Live view caps ---------------------------------------------------------
