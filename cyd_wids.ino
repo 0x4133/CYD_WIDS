@@ -19,6 +19,7 @@
 #include "contacts.h"
 #include "crypto.h"
 #include "file_xfer.h"
+#include "light_meter.h"
 #include "ui.h"
 #include <esp_system.h>
 
@@ -59,6 +60,7 @@ void setup() {
   uiBegin();           BOOT_HEAP("ui");
   sdWriterBegin();     BOOT_HEAP("sd");
   touchBegin();        BOOT_HEAP("touch");
+  lightMeterBegin();   BOOT_HEAP("light");
 
   // Touch calibration: load from SD, else run the wizard once and save.
   TouchCal tc;
@@ -119,6 +121,8 @@ void loop() {
     lastRedraw = millis();
     uiRedraw();
   }
+
+  lightMeterSample();
 
   static uint32_t hb = 0;
   if (millis() - hb > HEARTBEAT_MS) {
