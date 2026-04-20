@@ -109,7 +109,7 @@ static void drawRow(int slot, int idx) {
 static void refreshFooter() {
   if (pickMode) {
     uiDrawFooterButtons("PICK", "..", "CANCEL");
-  } else if (selected >= 0 && !ents[selected].isDir) {
+  } else if (selected >= 0 && selected < entN && !ents[selected].isDir) {
     uiDrawFooterButtons("OPEN", "SEND", "DEL");
   } else {
     uiDrawFooterButtons("UP", "DN", "..");
