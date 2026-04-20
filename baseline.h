@@ -2,6 +2,7 @@
 #pragma once
 #include "wifi_survey.h"
 #include "ble_scan.h"
+#include "alerts.h"
 
 enum BaselineState : uint8_t { BL_LEARN = 0, BL_MONITOR = 1 };
 
@@ -20,3 +21,4 @@ int baselineWifiCount();
 int baselineBleCount();
 
 void baselineRelearn();
+bool baselineAddFromAlert(const Alert& a);
