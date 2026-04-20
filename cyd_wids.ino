@@ -20,6 +20,7 @@
 #include "crypto.h"
 #include "file_xfer.h"
 #include "light_meter.h"
+#include "sd_http.h"
 #include "ui.h"
 #include <esp_system.h>
 
@@ -61,6 +62,7 @@ void setup() {
   sdWriterBegin();     BOOT_HEAP("sd");
   touchBegin();        BOOT_HEAP("touch");
   lightMeterBegin();   BOOT_HEAP("light");
+  sdHttpBegin();       BOOT_HEAP("sdhttp");
 
   // Touch calibration: load from SD, else run the wizard once and save.
   TouchCal tc;
@@ -123,6 +125,7 @@ void loop() {
   }
 
   lightMeterSample();
+  sdHttpTick();
 
   static uint32_t hb = 0;
   if (millis() - hb > HEARTBEAT_MS) {
