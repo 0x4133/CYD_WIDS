@@ -31,10 +31,14 @@ static uint16_t colorFor(AlertType t) {
   }
 }
 
-static void drawHeader(int nAlerts) {
+static void drawHeader() {
   char buf[64];
-  snprintf(buf, sizeof(buf), "ALERTS  total:%lu  shown:%d",
-    (unsigned long)alertTotalCount(), nAlerts);
+  Alert all[ALERT_LOG_MAX];
+  int n = alertSnapshot(all, ALERT_LOG_MAX);
+  int unacked = 0;
+  for (int i = 0; i < n; i++) if (!all[i].acked) unacked++;
+  snprintf(buf, sizeof(buf), "ALERTS  total:%lu  open:%d",
+    (unsigned long)alertTotalCount(), unacked);
   if (strcmp(buf, lastHeader) == 0) return;
   tft.fillRect(0, LIST_TOP, SCR_W, HDR_H, TFT_BLACK);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
@@ -49,7 +53,8 @@ static void drawRow(int row, const Alert& a) {
   uint16_t bg = (row == selectedRow) ? TFT_NAVY : TFT_BLACK;
   char line[64];
   snprintf(line, sizeof(line),
-    "%-9s %02X%02X:%02X %3lus %s",
+    "%c%-8s %02X%02X:%02X %3lus %s",
+    a.acked ? ' ' : '!',
     alertTypeName(a.type),
     a.mac[3], a.mac[4], a.mac[5],
     (unsigned long)ago, a.label);
@@ -63,6 +68,9 @@ static void drawRow(int row, const Alert& a) {
   tft.fillRect(0, y, SCR_W, HOME_ROW_H, bg);
   uint16_t col = colorFor(a.type);
   tft.setTextColor(col, bg);
+  tft.fillRect(0, y, SCR_W, HOME_ROW_H, TFT_BLACK);
+  uint16_t col = a.acked ? TFT_DARKGREY : colorFor(a.type);
+  tft.setTextColor(col, TFT_BLACK);
   tft.setTextDatum(ML_DATUM);
   tft.drawString(line, 4, y + HOME_ROW_H/2, 1);
   if (row < HOME_ROWS) strlcpy(lastRowText[row], key, sizeof(lastRowText[row]));
@@ -85,6 +93,7 @@ void drawScreenHome() {
   if (shown <= 0) selectedRow = -1;
   else if (selectedRow >= shown) selectedRow = shown - 1;
   drawHeader(total);
+  drawHeader();
   for (int i = 0; i < shown; i++) drawRow(i, all[scrollOff + i]);
   // clear rows freed up since last draw
   for (int i = shown; i < lastRowsDrawn; i++) {
@@ -141,13 +150,38 @@ bool touchScreenHome(int sx, int sy) {
     }
   }
 
-  // Tap inside the list / scroll-bar area to page through alerts:
+  // Tap a row to act on that alert:
+  // left half => ACK, right half => add NEW-WIFI/NEW-BLE to baseline + ACK.
+  const int rowTop = LIST_TOP + HDR_H;
+  const int rowBot = rowTop + HOME_ROWS * HOME_ROW_H;
+  const int barW = 10;
+  const int barX = SCR_W - barW - 1;
+  if (sy >= rowTop && sy < rowBot && sx < barX) {
+    Alert all[ALERT_LOG_MAX];
+    int total = alertSnapshot(all, ALERT_LOG_MAX);
+    int shown = min(HOME_ROWS, total - scrollOff);
+    int row = (sy - rowTop) / HOME_ROW_H;
+    if (row >= 0 && row < shown) {
+      int idx = scrollOff + row;
+      if (sx < SCR_W / 2) {
+        if (alertAckBySnapshotIndex(idx, "manual")) uiRedraw();
+      } else {
+        if (baselineAddFromAlert(all[idx])) {
+          alertAckBySnapshotIndex(idx, "baseline");
+          uiRedraw();
+        }
+      }
+      return true;
+    }
+  }
+
+  // Tap inside the scroll-bar area to page through alerts:
   // upper half scrolls toward newer, lower half toward older.
   const int trackY = LIST_TOP + HDR_H;
   const int trackH = HOME_ROWS * HOME_ROW_H;
   Alert probe[ALERT_LOG_MAX];
   int total = alertSnapshot(probe, ALERT_LOG_MAX);
-  if (total > HOME_ROWS && sy >= trackY && sy < trackY + trackH) {
+  if (total > HOME_ROWS && sx >= barX && sy >= trackY && sy < trackY + trackH) {
     if (sy < trackY + trackH/2) scrollOff = max(0, scrollOff - HOME_ROWS);
     else                        scrollOff = min(total - HOME_ROWS, scrollOff + HOME_ROWS);
     selectedRow = -1;

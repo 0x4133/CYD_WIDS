@@ -20,12 +20,16 @@ struct Alert {
   uint8_t   mac[6];
   uint16_t  extra;                  // count / channel / rssi, type-dependent
   uint32_t  tMs;
+  uint32_t  ackMs;
+  bool      acked;
   char      label[ALERT_LABEL_MAX]; // SSID/name snippet, best-effort
 };
 
 void alertsBegin();
 void alertRaise(AlertType t, const uint8_t mac[6], uint16_t extra, const char* label);
 int  alertSnapshot(Alert* out, int maxOut);  // newest first
+bool alertAckBySnapshotIndex(int idx, const char* reason);
+void alertsAutoAckTick();
 void alertsClear();               // wipe the in-memory ring (UI button)
 bool alertAck(AlertType t, const uint8_t mac[6]); // suppress this signature
 bool alertAckOne(const Alert& a);                 // convenience helper
