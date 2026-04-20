@@ -60,3 +60,8 @@
 // ---- Debug ------------------------------------------------------------------
 #define HEARTBEAT_MS      1000
 #define TOUCH_DEBOUNCE_MS  220
+
+// ---- Alert handling ---------------------------------------------------------
+// If an unacknowledged alert signature (type+MAC) persists for this long, it
+// is auto-acknowledged and suppressed from the active alert view.
+#define ALERT_AUTO_ACK_DWELL_MS (2 * 60 * 1000UL)
