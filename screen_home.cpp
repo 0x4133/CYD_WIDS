@@ -66,11 +66,8 @@ static void drawRow(int row, const Alert& a) {
   snprintf(key, sizeof(key), "%d|%u|%s", (int)a.type, (unsigned)bg, line);
   if (row < HOME_ROWS && strcmp(key, lastRowText[row]) == 0) return;
   tft.fillRect(0, y, SCR_W, HOME_ROW_H, bg);
-  uint16_t col = colorFor(a.type);
-  tft.setTextColor(col, bg);
-  tft.fillRect(0, y, SCR_W, HOME_ROW_H, TFT_BLACK);
   uint16_t col = a.acked ? TFT_DARKGREY : colorFor(a.type);
-  tft.setTextColor(col, TFT_BLACK);
+  tft.setTextColor(col, bg);
   tft.setTextDatum(ML_DATUM);
   tft.drawString(line, 4, y + HOME_ROW_H/2, 1);
   if (row < HOME_ROWS) strlcpy(lastRowText[row], key, sizeof(lastRowText[row]));
@@ -92,7 +89,6 @@ void drawScreenHome() {
   int shown = min(HOME_ROWS, total - scrollOff);
   if (shown <= 0) selectedRow = -1;
   else if (selectedRow >= shown) selectedRow = shown - 1;
-  drawHeader(total);
   drawHeader();
   for (int i = 0; i < shown; i++) drawRow(i, all[scrollOff + i]);
   // clear rows freed up since last draw
@@ -188,7 +184,6 @@ bool touchScreenHome(int sx, int sy) {
     uiRedraw();
     return true;
   }
-  const int rowTop = LIST_TOP + HDR_H;
   const int rowBottom = rowTop + HOME_ROWS * HOME_ROW_H;
   if (sy >= rowTop && sy < rowBottom) {
     int rel = (sy - rowTop) / HOME_ROW_H;
