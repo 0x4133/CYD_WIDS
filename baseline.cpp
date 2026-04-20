@@ -31,11 +31,6 @@ static void parseMac(const char* s, uint8_t out[6]) {
   }
 }
 
-static void macToStr(const uint8_t mac[6], char out[18]) {
-  snprintf(out, 18, "%02X:%02X:%02X:%02X:%02X:%02X",
-           mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-}
-
 static bool cacheHasOrAdd(uint8_t cache[][6], int& n, const uint8_t mac[6]) {
   for (int i = 0; i < n; i++) if (memcmp(cache[i], mac, 6) == 0) return true;
   if (n < NEW_ALERT_CACHE) { memcpy(cache[n++], mac, 6); }
@@ -266,26 +261,4 @@ bool baselineAddFromAlert(const Alert& a) {
     sdWriterEnqueue("/events.log", row);
   }
   return true;
-  if (a.type != ALERT_NEW_WIFI && a.type != ALERT_NEW_BLE) return false;
-  char mac[18];
-  macToStr(a.mac, mac);
-
-  if (a.type == ALERT_NEW_WIFI) {
-    if (hasWifi(mac)) return true;
-    if (wifiBaseN >= MAX_BASELINE_WIFI) return false;
-    WifiKey k{};
-    strlcpy(k.bssid, mac, sizeof(k.bssid));
-    strlcpy(k.ssid,  a.label, sizeof(k.ssid));
-    k.channel = (uint8_t)(a.extra & 0xFF);
-    k.auth = 0;
-    wifiBase[wifiBaseN++] = k;
-  } else {
-    if (hasBle(mac)) return true;
-    if (bleBaseN >= MAX_BASELINE_BLE) return false;
-    BleKey k{};
-    strlcpy(k.mac, mac, sizeof(k.mac));
-    strlcpy(k.name, a.label, sizeof(k.name));
-    bleBase[bleBaseN++] = k;
-  }
-  return persist();
 }

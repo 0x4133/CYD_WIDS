@@ -110,7 +110,6 @@ void alertRaise(AlertType t, const uint8_t mac[6], uint16_t extra, const char* l
   memcpy(a.mac, macSafe, 6);
   a.extra = extra;
   a.tMs   = nowMs;
-  a.tMs   = millis();
   a.ackMs = 0;
   a.acked = false;
   if (label) strlcpy(a.label, label, ALERT_LABEL_MAX);
@@ -135,6 +134,9 @@ static bool ackByRingIndexNoLock(int ringIdx, const char* reason) {
   if (ringIdx < 0 || ringIdx >= ALERT_LOG_MAX) return false;
   Alert& a = ring[ringIdx];
   if (a.type == ALERT_NONE || a.acked) return false;
+  AlertTrack* tr = trackFindOrAdd(a.type, a.mac, millis());
+  tr->acked = true;
+  tr->lastMs = millis();
   a.acked = true;
   a.ackMs = millis();
   char macs[18];
