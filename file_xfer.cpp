@@ -396,11 +396,11 @@ static void onOffer(const uint8_t src[6], const uint8_t* p, int plen) {
   }
   uint16_t expectChunks = (uint16_t)((size + XFER_CHUNK_BYTES - 1) / XFER_CHUNK_BYTES);
   if (chunks != expectChunks) {
-    xSemaphoreGive(mtx);
-    Serial.printf("[XFER] OFFER dropped: chunks mismatch got=%u expect=%u\n",
+    // v1 compatibility path: accept the offer but trust size-derived chunk
+    // count so receiver-side bitmap/prealloc math stays self-consistent.
+    Serial.printf("[XFER] OFFER normalize chunks got=%u expect=%u\n",
                   (unsigned)chunks, (unsigned)expectChunks);
-    sendRaw(src, TAG_FILE_DECLINE, (const uint8_t*)"\x04", 1);
-    return;
+    chunks = expectChunks;
   }
 
   char raw[XFER_NAME_MAX + 1] = {0};
