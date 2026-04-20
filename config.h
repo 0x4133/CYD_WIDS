@@ -61,6 +61,15 @@
 #define HEARTBEAT_MS      1000
 #define TOUCH_DEBOUNCE_MS  220
 
+// ---- Built-in ambient light sensor (LDR on many CYD boards) ---------------
+// CYD variants commonly wire an LDR divider to GPIO34 (ADC1_CH6).
+// If your board uses a different pin, override here.
+#define LIGHT_SENSOR_PIN      34
+#define LIGHT_SENSOR_MIN      0
+#define LIGHT_SENSOR_MAX      4095
+// Set to 1 when raw ADC goes down as scene gets brighter.
+#define LIGHT_SENSOR_INVERT   0
+
 // ---- Alert handling ---------------------------------------------------------
 // If an unacknowledged alert signature (type+MAC) persists for this long, it
 // is auto-acknowledged and suppressed from the active alert view.

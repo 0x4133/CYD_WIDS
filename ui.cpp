@@ -5,6 +5,7 @@
 #include "radio_scheduler.h"
 #include "baseline.h"
 #include "sd_writer.h"
+#include "light_meter.h"
 
 #define ALERT_FLASH_MS 3000
 
@@ -137,15 +138,18 @@ void uiDrawStatusStrip() {
       (unsigned long)alertTotalCount(),
       (unsigned long)(since/1000));
   } else if (learning) {
+    int light = lightMeterPercent();
     uint32_t s = baselineMsRemaining() / 1000;
     snprintf(buf, sizeof(buf),
-      "LEARN %02lu:%02lu  bl:%d/%d  alerts:%lu  drop:%lu",
-      s/60, s%60, baselineWifiCount(), baselineBleCount(),
+      "LEARN %02lu:%02lu  L:%d%%  bl:%d/%d  alerts:%lu  drop:%lu",
+      s/60, s%60, light, baselineWifiCount(), baselineBleCount(),
       (unsigned long)alertTotalCount(),
       (unsigned long)sdWriterDropped());
   } else {
+    int light = lightMeterPercent();
     snprintf(buf, sizeof(buf),
-      "MONITOR  bl:%d/%d  alerts:%lu  SD:%s  drop:%lu",
+      "MONITOR  L:%d%%  bl:%d/%d  alerts:%lu  SD:%s  drop:%lu",
+      light,
       baselineWifiCount(), baselineBleCount(),
       (unsigned long)alertTotalCount(),
       sdWriterReady() ? "ok" : "none",
