@@ -3,16 +3,18 @@
 #include "sd_writer.h"
 #include <Arduino.h>
 #include <SD.h>
+#include <mbedtls/base64.h>
 
 static bool gRunning = false;
 static char gUrl[64] = "";
 
 static File gUploadFile;
 static uint32_t gUploadRemain = 0;
+static uint32_t gUploadTotal = 0;
 static char gUploadPath[96] = "";
 
-static char gLine[128];
-static uint8_t gLineLen = 0;
+static char gLine[512];
+static uint16_t gLineLen = 0;
 
 static void sanitizeName(const char* in, char* out, size_t cap) {
   size_t j = 0;
@@ -35,7 +37,26 @@ static void printHelp() {
   Serial.println("[SDSER]   LS");
   Serial.println("[SDSER]   GET <name>");
   Serial.println("[SDSER]   DEL <name>");
-  Serial.println("[SDSER]   PUT <name> <size>  (then stream <size> raw bytes)");
+  Serial.println("[SDSER]   PUT <name> <size>  (then DATA <base64>... and PUT END)");
+}
+
+static bool b64EncodeAndPrint(const uint8_t* data, size_t len) {
+  // Encoded length = ceil(len/3)*4.
+  uint8_t out[350];
+  size_t outLen = 0;
+  int rc = mbedtls_base64_encode(out, sizeof(out), &outLen, data, len);
+  if (rc != 0) return false;
+  Serial.print("[SDSER] DATA ");
+  Serial.write(out, outLen);
+  Serial.println();
+  return true;
+}
+
+static bool b64Decode(const char* in, uint8_t* out, size_t outCap, size_t* outLen) {
+  if (!in || !out || !outLen) return false;
+  int rc = mbedtls_base64_decode(out, outCap, outLen,
+                                 (const uint8_t*)in, strlen(in));
+  return rc == 0;
 }
 
 static void listRoot() {
@@ -74,14 +95,17 @@ static void doGet(const char* arg) {
   }
   uint32_t n = f.size();
   Serial.printf("[SDSER] GET BEGIN %s %lu\n", clean, (unsigned long)n);
-  uint8_t buf[256];
+  uint8_t buf[180];
   while (f.available()) {
     int r = f.read(buf, sizeof(buf));
     if (r <= 0) break;
-    Serial.write(buf, r);
+    if (!b64EncodeAndPrint(buf, (size_t)r)) {
+      f.close();
+      Serial.println("[SDSER] ERR b64-encode");
+      return;
+    }
   }
   f.close();
-  Serial.println();
   Serial.println("[SDSER] GET END");
 }
 
@@ -118,6 +142,7 @@ static void beginPut(const char* arg) {
     return;
   }
   gUploadRemain = (uint32_t)size;
+  gUploadTotal  = (uint32_t)size;
   Serial.printf("[SDSER] PUT READY %s %lu\n", clean, size);
 }
 
@@ -127,10 +152,68 @@ static void handleCommand(const char* line) {
   if (strcasecmp(line, "HELP") == 0) { printHelp(); return; }
   if (strcasecmp(line, "LS") == 0) { listRoot(); return; }
 
+  if (strncasecmp(line, "PUT END", 7) == 0) {
+    if (gUploadTotal == 0) {
+      Serial.println("[SDSER] ERR no-put");
+      return;
+    }
+    if (gUploadRemain != 0) {
+      gUploadFile.close();
+      SD.remove(gUploadPath);
+      Serial.printf("[SDSER] ERR put-size expected=%lu remain=%lu\n",
+                    (unsigned long)gUploadTotal, (unsigned long)gUploadRemain);
+      gUploadRemain = 0;
+      gUploadTotal = 0;
+      gUploadPath[0] = 0;
+      return;
+    }
+    gUploadFile.close();
+    Serial.printf("[SDSER] PUT OK %s\n", gUploadPath + 1);
+    gUploadRemain = 0;
+    gUploadTotal = 0;
+    gUploadPath[0] = 0;
+    return;
+  }
+
   if (strncasecmp(line, "GET ", 4) == 0) { doGet(line + 4); return; }
   if (strncasecmp(line, "DEL ", 4) == 0) { doDelete(line + 4); return; }
   if (strncasecmp(line, "PUT ", 4) == 0) { beginPut(line + 4); return; }
 
+  if (gUploadRemain > 0 && strncasecmp(line, "DATA ", 5) == 0) {
+    const char* b64 = line + 5;
+    uint8_t raw[192];
+    size_t rawLen = 0;
+    if (!b64Decode(b64, raw, sizeof(raw), &rawLen) || rawLen == 0) {
+      gUploadFile.close();
+      SD.remove(gUploadPath);
+      Serial.println("[SDSER] ERR put-b64");
+      gUploadRemain = 0;
+      gUploadTotal = 0;
+      gUploadPath[0] = 0;
+      return;
+    }
+    if (rawLen > gUploadRemain) {
+      gUploadFile.close();
+      SD.remove(gUploadPath);
+      Serial.println("[SDSER] ERR put-overflow");
+      gUploadRemain = 0;
+      gUploadTotal = 0;
+      gUploadPath[0] = 0;
+      return;
+    }
+    size_t w = gUploadFile.write(raw, rawLen);
+    if (w != rawLen) {
+      gUploadFile.close();
+      SD.remove(gUploadPath);
+      Serial.println("[SDSER] ERR put-write");
+      gUploadRemain = 0;
+      gUploadTotal = 0;
+      gUploadPath[0] = 0;
+      return;
+    }
+    gUploadRemain -= (uint32_t)rawLen;
+    return;
+  }
   Serial.printf("[SDSER] ERR unknown: %s\n", line);
 }
 
@@ -149,21 +232,6 @@ void sdHttpTick() {
   if (!gRunning) return;
 
   while (Serial.available() > 0) {
-    if (gUploadRemain > 0) {
-      uint8_t buf[128];
-      int n = Serial.readBytes((char*)buf, min((int)sizeof(buf), (int)gUploadRemain));
-      if (n > 0) {
-        gUploadFile.write(buf, n);
-        gUploadRemain -= (uint32_t)n;
-        if (gUploadRemain == 0) {
-          gUploadFile.close();
-          Serial.printf("[SDSER] PUT OK %s\n", gUploadPath + 1);
-          gUploadPath[0] = 0;
-        }
-      }
-      continue;
-    }
-
     int c = Serial.read();
     if (c < 0) break;
     if (c == '\r') continue;
