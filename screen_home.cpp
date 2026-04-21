@@ -32,7 +32,7 @@ static const char* flowName(HomeFlow f) {
 }
 
 static void drawFooter() {
-  uiDrawFooterButtons("CAL", flowName(flowMode), "AUTO");
+  uiDrawFooterButtons("CAL", flowName(flowMode), "RELRN");
 }
 
 static uint16_t colorFor(AlertType t) {
@@ -85,19 +85,6 @@ static bool applyFlowBySnapshotIndex(int idx) {
     return alertAckBySnapshotIndex(idx, "smart-baseline");
   }
   return alertAckBySnapshotIndex(idx, "smart-ack");
-}
-
-static int runAutoWorkflow() {
-  int acted = 0;
-  int guard = ALERT_LOG_MAX * 2;
-  while (guard-- > 0) {
-    Alert probe[ALERT_LOG_MAX];
-    int n = alertSnapshot(probe, ALERT_LOG_MAX);
-    if (n <= 0) break;
-    if (!applyFlowBySnapshotIndex(0)) break;
-    acted++;
-  }
-  return acted;
 }
 
 static void drawRow(int row, const Alert& a) {
@@ -184,7 +171,8 @@ bool touchScreenHome(int sx, int sy) {
     return true;
   }
   if (btn == 2) {
-    if (runAutoWorkflow() > 0) uiRedraw();
+    baselineRelearn();
+    uiRedraw();
     return true;
   }
   if (btn == 1) {
