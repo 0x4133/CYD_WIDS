@@ -3,18 +3,20 @@
 #include "sd_writer.h"
 #include <Arduino.h>
 #include <SD.h>
-#include <WebServer.h>
-#include <WiFi.h>
 
-static WebServer server(80);
 static bool gRunning = false;
 static char gUrl[64] = "";
+
 static File gUploadFile;
+static uint32_t gUploadRemain = 0;
 static char gUploadPath[96] = "";
 
-static void sanitizeName(const String& in, char* out, size_t cap) {
+static char gLine[128];
+static uint8_t gLineLen = 0;
+
+static void sanitizeName(const char* in, char* out, size_t cap) {
   size_t j = 0;
-  for (size_t i = 0; i < in.length() && j + 1 < cap; i++) {
+  for (size_t i = 0; in[i] && j + 1 < cap; i++) {
     char c = in[i];
     if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' ||
         c == '"' || c == '<' || c == '>' || c == '|') continue;
@@ -27,161 +29,152 @@ static void sanitizeName(const String& in, char* out, size_t cap) {
   out[j] = 0;
 }
 
-static String htmlEscape(const char* s) {
-  String out;
-  while (*s) {
-    char c = *s++;
-    if (c == '&') out += "&amp;";
-    else if (c == '<') out += "&lt;";
-    else if (c == '>') out += "&gt;";
-    else if (c == '"') out += "&quot;";
-    else out += c;
-  }
-  return out;
+static void printHelp() {
+  Serial.println("[SDSER] commands:");
+  Serial.println("[SDSER]   HELP");
+  Serial.println("[SDSER]   LS");
+  Serial.println("[SDSER]   GET <name>");
+  Serial.println("[SDSER]   DEL <name>");
+  Serial.println("[SDSER]   PUT <name> <size>  (then stream <size> raw bytes)");
 }
 
-static void handleRoot() {
-  if (!sdWriterReady()) {
-    server.send(503, "text/plain", "SD card not ready");
-    return;
-  }
-  String html;
-  html.reserve(4096);
-  html += "<html><head><meta name='viewport' content='width=device-width,initial-scale=1'>";
-  html += "<title>CYD SD Card</title></head><body>";
-  html += "<h2>CYD SD Card</h2>";
-  html += "<form method='POST' action='/upload' enctype='multipart/form-data'>";
-  html += "<input type='file' name='file'><button type='submit'>Upload</button></form>";
-  html += "<p><a href='/'>Refresh</a></p><hr><ul>";
-
+static void listRoot() {
   File root = SD.open("/");
   if (!root || !root.isDirectory()) {
     if (root) root.close();
-    server.send(500, "text/plain", "failed to open root");
+    Serial.println("[SDSER] ERR root");
     return;
   }
+  Serial.println("[SDSER] LS BEGIN");
   File f;
   while ((f = root.openNextFile())) {
-    String name = f.name();
-    const char* last = strrchr(name.c_str(), '/');
-    String base = last ? String(last + 1) : name;
-    if (base.length() == 0) { f.close(); continue; }
-    if (f.isDirectory()) {
-      html += "<li>[DIR] ";
-      html += htmlEscape(base.c_str());
-      html += "</li>";
-    } else {
-      html += "<li>";
-      html += htmlEscape(base.c_str());
-      html += " (" + String((unsigned long)f.size()) + " bytes) ";
-      html += "<a href='/download?name=" + base + "'>download</a> ";
-      html += "<a href='/delete?name=" + base + "' onclick=\"return confirm('Delete file?')\">delete</a>";
-      html += "</li>";
+    const char* n = f.name();
+    const char* base = strrchr(n, '/');
+    base = base ? base + 1 : n;
+    if (base && base[0]) {
+      Serial.printf("[SDSER] %c %s %lu\n", f.isDirectory() ? 'D' : 'F',
+                    base, (unsigned long)f.size());
     }
     f.close();
   }
   root.close();
-  html += "</ul></body></html>";
-  server.send(200, "text/html", html);
+  Serial.println("[SDSER] LS END");
 }
 
-static bool buildPathFromName(char* out, size_t outN) {
-  if (!server.hasArg("name")) return false;
+static void doGet(const char* arg) {
   char clean[48];
-  sanitizeName(server.arg("name"), clean, sizeof(clean));
-  if (!clean[0]) return false;
-  snprintf(out, outN, "/%s", clean);
-  return true;
-}
-
-static void handleDownload() {
-  if (!sdWriterReady()) {
-    server.send(503, "text/plain", "SD card not ready");
-    return;
-  }
-  char path[96];
-  if (!buildPathFromName(path, sizeof(path))) {
-    server.send(400, "text/plain", "missing name");
-    return;
-  }
+  sanitizeName(arg, clean, sizeof(clean));
+  char path[64];
+  snprintf(path, sizeof(path), "/%s", clean);
   File f = SD.open(path, FILE_READ);
   if (!f || f.isDirectory()) {
     if (f) f.close();
-    server.send(404, "text/plain", "not found");
+    Serial.printf("[SDSER] ERR not-found %s\n", clean);
     return;
   }
-  server.sendHeader("Content-Type", "application/octet-stream");
-  server.sendHeader("Content-Disposition", String("attachment; filename=\"") + (path + 1) + "\"");
-  server.streamFile(f, "application/octet-stream");
+  uint32_t n = f.size();
+  Serial.printf("[SDSER] GET BEGIN %s %lu\n", clean, (unsigned long)n);
+  uint8_t buf[256];
+  while (f.available()) {
+    int r = f.read(buf, sizeof(buf));
+    if (r <= 0) break;
+    Serial.write(buf, r);
+  }
   f.close();
+  Serial.println();
+  Serial.println("[SDSER] GET END");
 }
 
-static void handleDelete() {
-  if (!sdWriterReady()) {
-    server.send(503, "text/plain", "SD card not ready");
+static void doDelete(const char* arg) {
+  char clean[48];
+  sanitizeName(arg, clean, sizeof(clean));
+  char path[64];
+  snprintf(path, sizeof(path), "/%s", clean);
+  if (!SD.exists(path)) {
+    Serial.printf("[SDSER] ERR not-found %s\n", clean);
     return;
   }
-  char path[96];
-  if (!buildPathFromName(path, sizeof(path))) {
-    server.send(400, "text/plain", "missing name");
-    return;
-  }
-  if (SD.exists(path)) SD.remove(path);
-  server.sendHeader("Location", "/");
-  server.send(303);
+  bool ok = SD.remove(path);
+  Serial.printf("[SDSER] %s %s\n", ok ? "OK DEL" : "ERR DEL", clean);
 }
 
-static void handleUploadDone() {
+static void beginPut(const char* arg) {
+  char name[48] = {0};
+  unsigned long size = 0;
+  if (sscanf(arg, "%47s %lu", name, &size) != 2 || size == 0) {
+    Serial.println("[SDSER] ERR usage: PUT <name> <size>");
+    return;
+  }
+  char clean[48];
+  sanitizeName(name, clean, sizeof(clean));
+  snprintf(gUploadPath, sizeof(gUploadPath), "/%s", clean);
+  if (SD.exists(gUploadPath)) SD.remove(gUploadPath);
+
   if (gUploadFile) gUploadFile.close();
-  gUploadPath[0] = 0;
-  server.sendHeader("Location", "/");
-  server.send(303);
+  gUploadFile = SD.open(gUploadPath, FILE_WRITE);
+  if (!gUploadFile) {
+    gUploadPath[0] = 0;
+    Serial.printf("[SDSER] ERR open %s\n", clean);
+    return;
+  }
+  gUploadRemain = (uint32_t)size;
+  Serial.printf("[SDSER] PUT READY %s %lu\n", clean, size);
 }
 
-static void handleUploadStream() {
-  if (!sdWriterReady()) return;
-  HTTPUpload& upload = server.upload();
-  if (upload.status == UPLOAD_FILE_START) {
-    if (gUploadFile) gUploadFile.close();
-    char clean[48];
-    sanitizeName(upload.filename, clean, sizeof(clean));
-    snprintf(gUploadPath, sizeof(gUploadPath), "/%s", clean);
-    if (SD.exists(gUploadPath)) SD.remove(gUploadPath);
-    gUploadFile = SD.open(gUploadPath, FILE_WRITE);
-  } else if (upload.status == UPLOAD_FILE_WRITE) {
-    if (gUploadFile) gUploadFile.write(upload.buf, upload.currentSize);
-  } else if (upload.status == UPLOAD_FILE_END || upload.status == UPLOAD_FILE_ABORTED) {
-    if (gUploadFile) gUploadFile.close();
-    gUploadPath[0] = 0;
-  }
+static void handleCommand(const char* line) {
+  while (*line == ' ' || *line == '\t') line++;
+  if (!*line) return;
+  if (strcasecmp(line, "HELP") == 0) { printHelp(); return; }
+  if (strcasecmp(line, "LS") == 0) { listRoot(); return; }
+
+  if (strncasecmp(line, "GET ", 4) == 0) { doGet(line + 4); return; }
+  if (strncasecmp(line, "DEL ", 4) == 0) { doDelete(line + 4); return; }
+  if (strncasecmp(line, "PUT ", 4) == 0) { beginPut(line + 4); return; }
+
+  Serial.printf("[SDSER] ERR unknown: %s\n", line);
 }
 
 void sdHttpBegin() {
   if (!sdWriterReady()) {
-    Serial.println("[SDHTTP] SD not ready");
+    Serial.println("[SDSER] SD not ready");
     return;
   }
-  WiFi.mode(WIFI_AP_STA);
-  if (!WiFi.softAP("CYD-SD", "12345678")) {
-    Serial.println("[SDHTTP] softAP failed");
-    return;
-  }
-
-  IPAddress ip = WiFi.softAPIP();
-  snprintf(gUrl, sizeof(gUrl), "http://%u.%u.%u.%u/", ip[0], ip[1], ip[2], ip[3]);
-
-  server.on("/", HTTP_GET, handleRoot);
-  server.on("/download", HTTP_GET, handleDownload);
-  server.on("/delete", HTTP_GET, handleDelete);
-  server.on("/upload", HTTP_POST, handleUploadDone, handleUploadStream);
-  server.onNotFound([]() { server.send(404, "text/plain", "not found"); });
-  server.begin();
+  strlcpy(gUrl, "serial://usb", sizeof(gUrl));
   gRunning = true;
-  Serial.printf("[SDHTTP] ready at %s\n", gUrl);
+  Serial.println("[SDSER] ready over USB serial");
+  printHelp();
 }
 
 void sdHttpTick() {
-  if (gRunning) server.handleClient();
+  if (!gRunning) return;
+
+  while (Serial.available() > 0) {
+    if (gUploadRemain > 0) {
+      uint8_t buf[128];
+      int n = Serial.readBytes((char*)buf, min((int)sizeof(buf), (int)gUploadRemain));
+      if (n > 0) {
+        gUploadFile.write(buf, n);
+        gUploadRemain -= (uint32_t)n;
+        if (gUploadRemain == 0) {
+          gUploadFile.close();
+          Serial.printf("[SDSER] PUT OK %s\n", gUploadPath + 1);
+          gUploadPath[0] = 0;
+        }
+      }
+      continue;
+    }
+
+    int c = Serial.read();
+    if (c < 0) break;
+    if (c == '\r') continue;
+    if (c == '\n') {
+      gLine[gLineLen] = 0;
+      handleCommand(gLine);
+      gLineLen = 0;
+      continue;
+    }
+    if (gLineLen + 1 < sizeof(gLine)) gLine[gLineLen++] = (char)c;
+  }
 }
 
 bool sdHttpRunning() { return gRunning; }

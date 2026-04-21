@@ -65,17 +65,17 @@ void drawScreenWifi() {
     tft.fillRect(0, y, SCR_W, ROW_H, TFT_BLACK);
     if (i < LIST_ROWS) lastRowText[i][0] = 0;
   }
-  // SD web transfer hint
+  // SD serial transfer hint
   const int infoY = LIST_BOT - 14;
   tft.fillRect(0, infoY, SCR_W, 14, 0x0841);
   tft.setTextColor(sdHttpRunning() ? TFT_CYAN : TFT_DARKGREY, 0x0841);
   tft.setTextDatum(ML_DATUM);
   if (sdHttpRunning()) {
     char line[96];
-    snprintf(line, sizeof(line), "SD xfer AP:CYD-SD pw:12345678 %s", sdHttpUrl());
+    snprintf(line, sizeof(line), "SD xfer USB serial @921600 %s", sdHttpUrl());
     tft.drawString(line, 2, infoY + 7, 1);
   } else {
-    tft.drawString("SD xfer offline", 2, infoY + 7, 1);
+    tft.drawString("SD xfer serial offline", 2, infoY + 7, 1);
   }
 
   lastRowsDrawn = rowsNow;

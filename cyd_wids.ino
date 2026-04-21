@@ -52,7 +52,7 @@ static const char* resetReasonStr(esp_reset_reason_t r) {
     (label), ESP.getFreeHeap(), ESP.getMaxAllocHeap())
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(921600);
   delay(200);
   esp_reset_reason_t rr = esp_reset_reason();
   Serial.printf("[BOOT] CYD WIDS M1 reset=%s(%d) free=%u largest=%u\n",
